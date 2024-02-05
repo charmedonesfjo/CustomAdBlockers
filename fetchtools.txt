@@ -1,15 +1,514 @@
-/interface detect-internet set detect-interface-list=none
-/interface detect-internet set lan-interface-list=none
-/interface detect-internet set wan-interface-list=none
-/interface detect-internet set internet-interface-list=none
-/tool mac-server set allowed-interface-list=all
-/tool mac-server mac-winbox set allowed-interface-list=all
-/ip neighbor discovery-settings set discover-interface-list=!dynamic
-/tool romon set enabled=yes
-/ip firewall connection tracking set enabled=yes
-/ip dns set allow-remote-requests=yes servers=1.1.1.1,8.8.4.4,9.9.9.11
-/system clock set time-zone-name=Asia/Manila
-/system clock manual set time-zone=+08:00
-/ip cloud set ddns-enabled=yes ddns-update-interval=1m
-:do {/interface ethernet; :foreach iface in=[/interface ethernet find] do={ /interface ethernet reset-mac-address $iface } } on-error={ };
-/ip service
+#### Created By: FJO CharmedOnes
+#### Date: 17 Jan 2024
+####  import file-name=allBridgeVLANCFG.rsc
+# NOTE :  Always check and ReCHECK parameters.
+# ClientType = 0 [OLD w/ existing setup]
+/ console clear-history; /interface ethernet;
+:do { } on-error={ };
+:do {/system script environment; :foreach iTem in=[/system script environment find] do={ /system script environment remove $iTem } } on-error={ };
+:do { :foreach iface in=[/interface ethernet find] do={ /interface ethernet reset-mac-address $iface } ;
+:do {/interface detect-internet set detect-interface-list=none; /interface detect-internet set lan-interface-list=none; /interface detect-internet set wan-interface-list=none; } on-error={ };
+:do {/interface detect-internet set internet-interface-list=none; /tool mac-server set allowed-interface-list=all; /tool mac-server mac-winbox set allowed-interface-list=all;} on-error={ };
+:do {/ip neighbor discovery-settings set discover-interface-list=!dynamic; /tool romon set enabled=yes; /ip firewall connection tracking set enabled=yes; } on-error={ };
+:do {/ip dns set allow-remote-requests=yes servers=1.1.1.1,8.8.8.8,9.9.9.9; /ip cloud set ddns-enabled=yes ddns-update-interval=1m; /system clock set time-zone-name=Asia/Manila;} on-error={ };
+:do {/ip service set telnet address=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 port=6923; /ip service set ftp address=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 port=6921; /ip service set ssh address=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 port=6922; } on-error={ }; } on-error={ };
+#BOF#
+:local ethCount [/interface ethernet print count-only where default-name~"ether";]; :local sfpCount [/interface ethernet print count-only where default-name~"sfp";];
+:do {:local ClientType 1; :local MTname [/system identity get name]; :local devPackage; :local softID; :local devSerial; /do {:set $devPackage [/system package get [/system package find name=routeros] name];} on-error={:set $devPackage "";}; :if ($ClientType!=0) do={/system identity set name="StartingScriptConfiguration....";}
+:do {/system logging disable 0; :set $softID [/system license get software-id];} on-error={:set $softID "UNKNOWN-ID";} ; :do {:set $devSerial [/system routerboard get serial-number];} on-error={:set $devSerial "UNKNOWN-SN";} 
+:local mtBoardName [/system resource get board-name]; :local sysBoardName;
+:for xp from=0 to=([:len $mtBoardName] - 1) do={:local char [:pick $mtBoardName $xp]; :if ($char = " ") do={:set $char "";}; :set $sysBoardName ($sysBoardName . $char);}
+##>>REPLACE tokenID | CharID  actual value.
+:local teleTokenId "2021159313:AAHEBoOLogYjLCpSwVeKPVmKKO4TIxa02vQ"; :local teleChatId "-928606285";
+:local hsIPadd "10.164.31.1"
+:local NonHScsip "10.192.168.1"
+:local IPAddppp "10.50.159.1" 
+:local DHCPLanIP "192.168.159.1"
+#:local BridgeName "br0-olt-gpon";
+:local BridgeName "br0-main-foc";
+:local vidName "HSvid-";
+:local CSipName "CSIPnon-$vidName";
+:local totalVIDcounts 35;
+:local VLANid 31;
+:local PPPvlanID "1220";
+:local CSIPvlanID "1219";
+:local DHCPLanVID "1218"
+:local EtherPortsCount 2;
+:local EtherPortStart 4;
+:local SFPcount 0;
+:local SFPortStart 1;
+:local ownername "Argie Sahulan  (Jbacz)"; 
+:local MTowner "OEMUser";
+####>>>DEVICE Admin Variables for MT device DEFAULT VALUES
+:local EthernetDefaultName "ether";
+#:local SFPDefaultName "sfp-sfpplus";
+:local SFPDefaultName "sfp";
+:local HSfolderLocation "hotspot";
+:local 1FiProfile "default";
+:local HSprofile "default_one_ip";
+####>>>Admin Routine Variables 0=DISABLE [0 & 1 only]
+:local AddALL 1;
+:local AddBaseCFG 1;
+:local AddHSBase 1;
+:local AddPPPoE 1;
+:local AddOnceHSBaseCFG 1;
+:local AddOnceHSBaseScript 1;
+:local AddOnceHSSalesScript 1;
+:local AddBootUPshedScript 1;
+:local AddNonHScsip 1;
+:local AddDHCPLanIP 1;
+:if ($AddDHCPLanIP != 0) do={}
+#PPPoE Variables
+:local namePPPoE "PPPoESvc-vid-"; 
+:local iList "PPPoE";
+####>>> Create and Change VLANVENDO password
+:local changePWAPI 1;
+#### DONT EDIT BEYOND THIS LINE
+:put "\r\n ===>>>>.......Preparing Configuration.......<<<<===\r\n\r\n\r\n";
+:global errCMD; :global errSHELL; :set $errCMD ":put \"ADD-RoutineErrorDetected unable to continue\"; /file remove [find name~\"allBridgeVLANCFG.rsc\"]; /system logging enable 0; /console clear-history; :delay 3s; /quit;"; :set $errSHELL [:put "$errCMD"]; :set $errCMD [:parse ":do {$errSHELL} on-error={ }"]; 
+:local ppoeport "$namePPPoE$PPPvlanID";
+:local dhcpbridgename "br-DHCPLAN-$softID";
+:local subnetmask 255.255.255.0;
+:local hsIPX3 21;
+:local EtherPortEnd [($EtherPortStart+$EtherPortsCount-1)];
+:local VLANidStart $VLANid;
+:local VLANidEnd [($VLANid+$totalVIDcounts)];
+:local SFPortsEnd 0;
+:local DotOne ".1";
+:if ($SFPcount != 0) do={ :set $SFPortsEnd [($SFPortStart+$SFPcount-1)]; }
+:local Ethertagged "0"; :local SFPtagged "0";
+:local ipconvert; :local CSipconvert; :local PPPipconvert; :local DHCPipconvert;
+:for i from=0 to=([:len $hsIPadd] - 1) do={:local char [:pick $hsIPadd $i]; :if ($char = ".") do={:set $char ",";}; :set $ipconvert ($ipconvert . $char);}
+:local ipxx [("xxx,")]; :local ipInfo [($ipxx . $ipconvert)];
+:local hsipArray [:toarray [:pick $ipInfo  ([:find $ipInfo  ","]+1) [:len $ipInfo ]]];
+:local hsIP01 [:pick $hsipArray 0]; :local hsIP02 [:pick $hsipArray 1]; :local hsIP03 [:pick $hsipArray 2]; :local hsIP04 [:pick $hsipArray 3];
+:put "\r\n.......CHECKING DEVICE and SYSTEM VARIABLES.........\r\n\r\n\r\n";
+:if ($hsIP01 != 0) do={:local ipz3 [($VLANidEnd+$hsIP03)]; :if ($ipz3 > 254) do={:set $hsIP03 $hsIPX3;} } else={:put "IPAddress-255 ERROR unable to continue"; / file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc]; :delay 1s; /clear history; /quit};
+:if ($VLANidEnd >= 4095) do={:put "VLAN 4094-ERROR unable to continue"; / file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc]; :delay 1s; /clear history; /quit}
+:if ($EtherPortEnd > $ethCount) do={:put "EthernetPorts-ERROR unable to continue"; / file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc]; :delay 1s; /clear history; /quit}
+:if ($SFPcount != 0) do={
+    :do {[:len [/interface ethernet get [/interface ethernet find default-name~("$SFPDefaultName" . "1")] name]]} on-error={:put "SFPDefaultName-ERROR unable to continue"; / file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc]; :delay 1s; /clear history; /quit};
+    :if ($SFPortsEnd > $sfpCount) do={:put "SFPPorts-ERROR unable to continue"; / file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc]; :delay 1s; /clear history; /quit} 
+}
+:local dummy "_DONTDeleteEnableThisITEM";
+:local v7cmd; :local cmdShell; :if ($devPackage="routeros") do={ :set $v7cmd "/ip hotspot profile set [find name=$HSprofile] install-hotspot-queue=no; /ipv6 settings set accept-redirects=no accept-router-advertisements=no disable-ipv6=yes "; :set $cmdShell [:put "$v7cmd"]; :set $v7cmd [:parse ":do {$cmdShell} on-error={ }"]; };
+:put "\r\n.......Preparing DEVICE and SYSTEM script enviroment.........\r\n\r\n\r\n";
+:if ($AddBaseCFG!=0) do={/ file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc];
+:if ($AddPPPoE=0) do={:do {/interface bridge add comment="$softID JuanFiInitSetupNETWORK" name="$ppoeport"; /ip address add address=10.0.10.1/32 interface="$ppoeport" network=10.0.10.1 comment="$softID JuanFiInitSetupNETWORK";} on-error={} };
+:do {/ip hotspot profile add name="$HSprofile" html-directory="$HSfolderLocation" login-by=cookie,http-chap,http-pap hotspot-address=10.0.0.1; } on-error={/ip hotspot profile set [find name="$HSprofile"] login-by=cookie,http-chap,http-pap html-directory="$HSfolderLocation" hotspot-address=10.0.0.1; };    
+:do {/interface list add name=WAN comment="$softID DefGrp by:fjo";} on-error={/interface list set [find name=WAN] comment="$softID DefGrp by:fjo";}; :if ($devPackage="routeros") do={$v7cmd;} ; :do {/queue type add kind=sfq name=QPPPqos sfq-allot=2048 sfq-perturb=3} on-error={ }; :do {/queue type add kind=sfq name=QHSqos sfq-allot=1642 sfq-perturb=3} on-error={ };
+:do {/interface list add exclude=WAN name=LAN comment="$softID DefGrp by:fjo";} on-error={/interface list set [find name=LAN] exclude=WAN comment="$softID DefGrp by:fjo";};
+:do {/interface list add exclude=WAN name=HS comment="$softID DefGrp by:fjo";} on-error={/interface list set [find name=HS] exclude=WAN comment="$softID DefGrp by:fjo";};
+:do {/interface list add name=SYSINFO comment="OwnerInfo: $ownername \r\n Date: $[/system clock get date] \r\n Time: $[/system clock get time] \r\n $softID by:fjo";} on-error={/interface list set [find name=SYSINFO] comment="OwnerInfo: $ownername \r\n Date: $[/system clock get date] \r\n Time: $[/system clock get time] \r\n $softID by:fjo";};
+:do {/user group add name=API_PISONET comment="$softID DefGrp by:fjo" policy="!reboot,read,test,api,!local,!telnet,!ssh,!ftp,!write,!policy,!winbox,!password,!web,!sniff,!sensitive"} on-error={/user group set [find name=API_PISONET] comment="$softID DefGrp by:fjo"};
+:do {/user group add name=API_VENDO_RW comment="$softID DefGrp by:fjo" policy="local,reboot,read,write,test,api,!telnet,!ssh,!ftp,!policy,!winbox,!password,!web,!sniff,!sensitive"} on-error={/user group set [find name=API_VENDO_RW] comment="$softID DefGrp by:fjo"};
+:do {/user group add name=RWUser comment="$devSerial DefGrp by:fjo" policy="reboot,read,write,test,winbox,web,api,!local,!telnet,!ssh,!ftp,!policy,!password,!sensitive"; } on-error={/user group set  [find name=RWUser] comment="$devSerial DefGrp by:fjo" policy="reboot,read,write,test,winbox,web,api,!local,!telnet,!ssh,!ftp,!policy,!password,!sensitive"; };
+:do {/user add comment="$softID NEED for Initial JuanFi Setup abc123" group=API_PISONET name=pisonet password="abc123"} on-error={:if ($ClientType!=0) do={/user set [find name=pisonet] comment="$softID NEED for Initial JuanFi Setup abc123" group=API_PISONET password="abc123"} }; 
+:if ($changePWAPI!=0) do={:do {/user add comment="$softID USE FOR API Coinslot code: $softID" group=API_VENDO_RW name=vlanvendo password="$softID"} on-error={:if ($ClientType!=0) do={/user set [find name=vlanvendo] comment="$softID USE FOR API Coinslot CODE: $softID" group=API_VENDO_RW password="$softID"}};}
+:if ($MTowner="lau") do={ :if ($ClientType!=0) do={ :do {/user add comment="$softID Device Config for $MTowner" group=full name=$MTowner pa="rizaldo12345"; /user set [find name=vlanvendo] comment="$softID Device Config for $MTowner" group=API_VENDO_RW pa="rizaldo12345";}  on-error={ } } }
+:do {/interface bridge add name="$softID$dummy" disa=yes comment="$softID DummyBridge $dummy"} on-error={}; :do {/ip dhcp-server alert add disabled=yes interface="$softID$dummy" on-alert="This Configuration is for \r\n OwnerInfo: $ownername \r\n Date: $[/system clock get date] \r\n Time: $[/system clock get time] \r\n $softID by:fjo" comment="OwnerInfo: $ownername \r\n Date: $[/system clock get date] \r\n Time: $[/system clock get time] \r\n $softID by:fjo";} on-error={ }; }
+:put "This Configuration is made for ---==>>> $ownername   Info: $MTowner \r\n\r\n Starting pls wait.... \r\n Date: $[/system clock get date] Time: $[/system clock get time]";
+####TOP
+#:local myip [:toip [:put "$hsIP01.$hsIP02.$hsIP03.$hsIP04"]]
+:local myip [:toip ("$hsIP01.$hsIP02.$hsIP03.$hsIP04")];
+:do {/interface bridge add name=$BridgeName protocol-mode=none frame-types=admit-only-vlan-tagged;} on-error={$errCMD };
+#/interface bridge port; add bridge=bridge1 interface=ether5 frame-types=admit-only-vlan-tagged; add bridge=bridge1 interface=ether4 pvid=20 frame-types=admit-only-untagged-and-priority-tagged; add bridge=bridge1 interface=ether3 pvid=30 frame-types=admit-only-untagged-and-priority-tagged
+{/interface bridge port; :delay 1s; :put "Preparing HOTSPOT Bridge Interface --===> Name: $BridgeName";
+:if ($EtherPortsCount != 0) do={:local InterfacePortName;
+:for i from=$EtherPortStart to=$EtherPortEnd do={:set $InterfacePortName [/interface ethernet get [find default-name="$EthernetDefaultName$i"] name ];
+:do {/interface bridge port add bridge=$BridgeName interface="$[/interface ethernet get [find default-name="$EthernetDefaultName$i"] name ]" frame-types=admit-only-vlan-tagged;} on-error={$errCMD};
+:if ($Ethertagged = 0) do={:set $Ethertagged "$InterfacePortName"} else={:set $Ethertagged ("$Ethertagged,$InterfacePortName")};
+} }
+:if ($SFPcount != 0) do={:local InterfacePortName;
+:for i from=$SFPortStart to=$SFPortsEnd do={:set $InterfacePortName [/interface ethernet get [find default-name="$SFPDefaultName$i"] name ];
+:do {/interface bridge port add bridge=$BridgeName interface="$[/interface ethernet get [find default-name="$SFPDefaultName$i"] name ]" frame-types=admit-only-vlan-tagged;} on-error={$errCMD};
+:if ($SFPtagged = 0) do={:set $SFPtagged "$InterfacePortName"} else={:set $SFPtagged ("$SFPtagged,$InterfacePortName")};
+} } }
+# /interface bridge vlan; add bridge=bridge1 tagged=ether5 vlan-ids=20; add bridge=bridge1 tagged=ether5 vlan-ids=30; add bridge=bridge1 tagged=ether5,bridge1 vlan-ids=99
+{/interface bridge vlan; :delay 1s; :put "Preparing Bridge vlan and port Interface";
+:local istart $VLANidStart;
+:local fnish $VLANidEnd;
+:local tempID; :local finalID 0; :local finalTagged;
+:for i from=$istart to=$fnish do={:set $tempID $i; :if ($finalID = 0) do={:set $finalID "$tempID"} else={:set $finalID ("$finalID,$tempID")}; }
+:if ($SFPortsEnd != 0) do={:set $finalTagged ("$Ethertagged,$SFPtagged,$BridgeName");} else={:set $finalTagged "$Ethertagged,$BridgeName"; }
+:if ($AddPPPoE != 0) do={:set $finalID ("$finalID,$PPPvlanID");}
+:if ($AddNonHScsip != 0) do={:set $finalID ("$finalID,$CSIPvlanID");}
+:if ($AddDHCPLanIP != 0) do={:set $finalID ("$finalID,$DHCPLanVID");}
+:do {/interface bridge vlan add bridge=$BridgeName tagged=$finalTagged vlan-ids=$finalID;} on-error={$errCMD};
+:delay 1s; :put "Bridge vlan and port tagged generated \r\n--==> Bridge: $BridgeName \r\n--==> Tags: $finalTagged \r\n--==> VPIDs: $finalID \r\n";
+}
+#/interface vlan add interface=bridge1 vlan-id=99 name=MGMT
+{/interface vlan
+#:local iFaceVidName $vidName; :local hsIPctr $hsIP03; :local iFaceIP [:toip [:put "$hsIP01.$hsIP02.$hsIP03.$hsIP04"]]; :local ipCIDR;
+:local iFaceVidName $vidName; :local hsIPctr $hsIP03; :local iFaceIP [:toip ("$hsIP01.$hsIP02.$hsIP03.$hsIP04")]; :local ipCIDR;
+:local IPvalArrayPick "0"; :local tcpIP01 "0"; :local tcpIP02 "0"; :local tcpIP03 "0"; :local tcpIP04 "0"; :local CIDRNonHScsip ($NonHScsip&$subnetmask)
+##CSIPnon-hotspot Section
+:if ($AddNonHScsip != 0) do={ /interface vlan add interface=$BridgeName vlan-id=$CSIPvlanID name="$CSipName$CSIPvlanID"
+:for i from=0 to=([:len $NonHScsip] - 1) do={:local char [:pick $NonHScsip $i]; :if ($char = ".") do={:set $char ",";}; :set $CSipconvert ($CSipconvert . $char);}
+:set $IPvalArrayPick [($ipxx . $CSipconvert)];
+:local CSipArray [:toarray [:pick $IPvalArrayPick  ([:find $IPvalArrayPick  ","]+1) [:len $IPvalArrayPick ]]];
+:set $tcpIP01 [:pick $CSipArray 0]; :set $tcpIP02 [:pick $CSipArray 1]; :set $tcpIP03 [:pick $CSipArray 2]; :set $tcpIP04 [:pick $CSipArray 3];
+:put "Generating Network IP Address for Coinslot NON HotspotMode Interface ---==>>> $CSipName$CSIPvlanID   IPv4address:---==>>> $NonHScsip \r\n";
+:do {/ip address add address="$NonHScsip/24" comment="$softID Interface: $CSipName VLAN: $CSIPvlanID" interface="$CSipName$CSIPvlanID"} on-error={};
+:do {/ip pool add comment="$softID Interface: $CSipName VLAN: $CSIPvlanID" name="pool_$CSipName$CSIPvlanID" ranges="$tcpIP01.$tcpIP02.$tcpIP03.3-$tcpIP01.$tcpIP02.$tcpIP03.10"} on-error={};
+:do {/ip dhcp-server network add address="$CIDRNonHScsip/24" comment="$softID Interface: $CSipName VLAN: $CSIPvlanID" gateway="$NonHScsip"} on-error={};
+:do {/ip dhcp-server add address-pool="pool_$CSipName$CSIPvlanID" disabled=no interface="$CSipName$CSIPvlanID" lease-time=3m name="$CSipName$CSIPvlanID"} on-error={}; }
+##PPPoE Section
+:if ($AddPPPoE!=0) do={ :put "Generating PPPoE Server Network configuration Interface ---==>>> $ppoeport   IPv4address:---==>>> $IPAddppp \r\n"; 
+    :local iList "PPPoE"; :local PPPtcpIP01 "0"; :local PPPtcpIP02 "0"; :local PPPtcpIP03 "0"; :local PPPtcpIP04 "0"; :local CIDRIPAddppp [($IPAddppp&$subnetmask)];
+    /interface vlan add interface=$BridgeName vlan-id=$PPPvlanID name="$ppoeport";
+    :for i from=0 to=([:len $IPAddppp] - 1) do={:local char [:pick $IPAddppp $i]; :if ($char = ".") do={:set $char ",";}; :set $PPPipconvert ($PPPipconvert . $char);}
+    :set $IPvalArrayPick [($ipxx . $PPPipconvert)];
+    :local PPPipArray [:toarray [:pick $IPvalArrayPick  ([:find $IPvalArrayPick  ","]+1) [:len $IPvalArrayPick ]]];
+    :set $PPPtcpIP01 [:pick $PPPipArray 0]; :set $PPPtcpIP02 [:pick $PPPipArray 1]; :set $PPPtcpIP03 [:pick $PPPipArray 2]; :set $PPPtcpIP04 [:pick $PPPipArray 3];
+    :do { :do {/interface list add exclude=WAN name=PPPoE comment="$softID PPPserviceNETWORK VLAN ID: $PPPvlanID"} on-error={}; /ip pool add name=PPPoEsvr_ip_pool_service comment="$softID IPpool Bridge: $BridgeName Interface: $ppoeport VLAN: $PPPvlanID" ranges=(("$PPPtcpIP01.$PPPtcpIP02.$PPPtcpIP03") . (".12-") . ("$PPPtcpIP01.$PPPtcpIP02.$PPPtcpIP03") . (".250")) 
+    #/ppp profile add address-list=IP_PPPoE comment="$softID $iList ServerProfile VLAN ID: $PPPvlanID" bridge="$BridgeName" change-tcp-mss=yes local-address="$IPAddppp" name="PPPoENetServer$PPPvlanID" remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList ServerProfile VLAN ID: $PPPvlanID" change-tcp-mss=yes local-address="$IPAddppp" name="PPPoENetServer$PPPvlanID" remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name="iadtest@pppoe$PPPvlanID" only-one=no parent-queue=none queue-type=QPPPqos rate-limit=5M/3M remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name=ActveUsrProfile03Mbps only-one=yes parent-queue=none queue-type=QPPPqos rate-limit=4M/4M remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name=ActveUsrProfile05Mbps only-one=yes parent-queue=none queue-type=QPPPqos rate-limit=6M/6M remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name=ActveUsrProfile07Mbps only-one=yes parent-queue=none queue-type=QPPPqos rate-limit=8M/8M remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name=ActveUsrProfile10Mbps only-one=yes parent-queue=none queue-type=QPPPqos rate-limit=11M/11M remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name=ActveUsrProfile15Mbps only-one=yes parent-queue=none queue-type=QPPPqos rate-limit=16M/16M remote-address=PPPoEsvr_ip_pool_service;
+    /ppp profile add address-list=IP_PPPoE comment="$softID $iList Users Profile NETWORK" interface-list="$iList" change-tcp-mss=yes insert-queue-before=bottom local-address="$IPAddppp" name=ActveUsrProfile20Mbps only-one=yes parent-queue=none queue-type=QPPPqos rate-limit=21M/21M remote-address=PPPoEsvr_ip_pool_service;
+    /interface pppoe-server server add default-profile="PPPoENetServer$PPPvlanID" disabled=no interface="$ppoeport" max-mru=1504 max-mtu=1504 mrru=1580 one-session-per-host=yes service-name="PPPoENetServer$PPPvlanID";
+    :do {/ip address add address="$IPAddppp" interface="$ppoeport" comment="$softID PPPserviceNETWORK VLAN ID: $PPPvlanID";} on-error={ };
+    :do {/ip dhcp-server network add address="$CIDRIPAddppp/24" comment="$softID PPPserviceNETWORK VLAN ID: $PPPvlanID" gateway="$IPAddppp"; } on-error={ };
+    :do {/ip firewall address-list add address="$CIDRIPAddppp/24" list=IntraNET; } on-error={ };
+    :do {/ip firewall address-list add address="$CIDRIPAddppp/24" disabled=yes list=IP_PPPoE;} on-error={ };
+    :do {/ip firewall nat add action=masquerade chain=srcnat comment="$softID defconf: masquerade PPPserviceNETWORK VLAN ID: $PPPvlanID" src-address-list=IP_PPPoE;} on-error={ };
+    :do {/interface list member add comment="$softID PPPoEListMember $PPPvlanID" interface="$ppoeport" list=PPPoE} on-error={};
+    :do {/ppp secret add name="iadtest@pppoe$PPPvlanID" password="iadtest@pppoe$PPPvlanID" profile="iadtest@pppoe$PPPvlanID" service=pppoe comment="$softID PPPserviceNETWORK VLAN ID: $PPPvlanID";} on-error={ };
+     } on-error={};  
+}
+:for i from=$VLANidStart to=$VLANidEnd do={ /interface vlan add interface=$BridgeName vlan-id=$i name="$iFaceVidName$i"
+:if ($AddALL != 0) do={:set $iFaceIP [:toip ("$hsIP01.$hsIP02.$hsIPctr.$hsIP04")]; :set $ipCIDR [($iFaceIP&$subnetmask)];
+:put "Generating Network   IPv4address:---==>>> $iFaceIP  Interface:---==>>> $iFaceVidName$i";
+#:set $iFaceIP [:toip [:put "$hsIP01.$hsIP02.$hsIPctr.$hsIP04"]]; :set $ipCIDR [($iFaceIP&$subnetmask)];
+:do {/ip address add address="$iFaceIP/24" comment="$softID Bridge: $BridgeName VLAN: $i" interface="$iFaceVidName$i"} on-error={};
+:do {/ip pool add comment="$softID IPpool Bridge: $BridgeName VLAN: $i" name="pool_$iFaceVidName$i" ranges="$hsIP01.$hsIP02.$hsIPctr.12-$hsIP01.$hsIP02.$hsIPctr.252"} on-error={};
+:do {/ip dhcp-server network add address="$ipCIDR/24" comment="$softID IPpool Bridge: $BridgeName VLAN: $i" gateway="$iFaceIP"} on-error={};
+:do {/ip dhcp-server add address-pool="pool_$iFaceVidName$i" disabled=no interface="$iFaceVidName$i" lease-time=3m name="$iFaceVidName$i"} on-error={};
+:if ($AddHSBase != 0) do={
+:if ($devPackage!="routeros") do={:do {/queue simple add comment="$softID DONT ENABLE/MOVE/DELETE THIS ITEM" disabled=yes name="hs-<$iFaceVidName$i>" target="$softID$dummy";} on-error={}; }
+:do {/ip hotspot add address-pool="pool_$iFaceVidName$i" disabled=no interface="$iFaceVidName$i" name="$iFaceVidName$i" profile="$HSprofile";} on-error={};
+:do {/ip hotspot ip-binding add address="$hsIP01.$hsIP02.$hsIPctr.8" to-address="$hsIP01.$hsIP02.$hsIPctr.8" type=bypassed comment="$softID CoinslotIP for $i";} on-error={};
+:do {/ip hotspot walled-garden add dst-host="$hsIP01.$hsIP02.$hsIPctr.8" comment="$softID CoinslotIP for $i";} on-error={};
+:do {/ip hotspot walled-garden ip add action=accept comment="$softID CoinslotIP for $i" disabled=no dst-address="$hsIP01.$hsIP02.$hsIPctr.8" !dst-address-list !dst-port !protocol !src-address !src-address-list} on-error={};
+:do {/ip firewall address-list add address=("$hsIP01.$hsIP02.$hsIPctr.8" . "/32")  comment="$softID CoinslotIPList for $i" list=IP_COINSLOTS} on-error={};
+:do {/ip firewall address-list add address="$ipCIDR/24"  comment="$softID CoinslotIP for $i" list=IntraNET} on-error={};
+:do {/ip firewall address-list add address="$ipCIDR/24"  comment="$softID CoinslotIP Masquerade List" list="IP_HS_VLAN_NETWORK"} on-error={};
+:do {/ip address add address="10.0.0.1" comment="$softID HSdotOneIP for $i" interface="$iFaceVidName$i" network="10.0.0.1";} on-error={};
+:do {/interface list member add comment="$softID HSListMember $h" interface="$iFaceVidName$i" list=HS} on-error={};
+:if ($AddNonHScsip != 0) do={ 
+:do {/ip hotspot walled-garden add dst-host="$tcpIP01.$tcpIP02.$tcpIP03.$hsIPctr" comment="$softID CoinslotIP NON-Hotspot-Subnet for $i";} on-error={};
+:do {/ip hotspot walled-garden ip add action=accept comment="$softID CoinslotIP NON-Hotspot-Subnet for $i" disabled=no dst-address="$tcpIP01.$tcpIP02.$tcpIP03.$hsIPctr" !dst-address-list !dst-port !protocol !src-address !src-address-list} on-error={};
+:do {/ip firewall address-list add address=("$tcpIP01.$tcpIP02.$tcpIP03.$hsIPctr" . "/32")  comment="$softID CoinslotIP NON-Hotspot-Subnet for $i" list=IP_COINSLOTS} on-error={};
+} }
+#end $AddHSBase
+:set $hsIPctr [($hsIPctr+1)];
+:delay 1s;
+} } 
+:if ($AddDHCPLanIP != 0) do={ 
+    :put "\r\n\nGenerating DHCP Server Network configuration Interface ---==>>> $dhcpbridgename   IPv4address:---==>>> $DHCPLanIP \r\n"; 
+    :local DHCPtcpIP01 "0"; :local DHCPtcpIP02 "0"; :local DHCPtcpIP03 "0"; :local DHCPtcpIP04 "0"; :local CIDRDHCPLanIP [($DHCPLanIP&$subnetmask)];
+    :do {/interface vlan add interface=$BridgeName vlan-id=$DHCPLanVID name="DHCPLANvid-$DHCPLanVID";} on-error={ };
+    :for i from=0 to=([:len $DHCPLanIP] - 1) do={:local char [:pick $DHCPLanIP $i]; :if ($char = ".") do={:set $char ",";}; :set $DHCPipconvert ($DHCPipconvert . $char);}
+    :set $IPvalArrayPick [($ipxx . $DHCPipconvert)];
+    :local PPPipArray [:toarray [:pick $IPvalArrayPick  ([:find $IPvalArrayPick  ","]+1) [:len $IPvalArrayPick ]]];
+    :set $DHCPtcpIP01 [:pick $PPPipArray 0]; :set $DHCPtcpIP02 [:pick $PPPipArray 1]; :set $DHCPtcpIP03 [:pick $PPPipArray 2]; :set $DHCPtcpIP04 [:pick $PPPipArray 3];   
+    :do {/interface bridge add comment="$softID DHCP POOL LAN service VLAN ID: $DHCPLanVID" disabled=no name="$dhcpbridgename" } on-error={ };
+    :do {/ip address add address="$DHCPLanIP/24" comment="$softID Bridge: $dhcpbridgename VLAN: $DHCPLanVID" interface="$dhcpbridgename"} on-error={};
+    :do {/ip pool add comment="$softID DHCP POOL LAN service VLAN ID: $DHCPLanVID" name="pool_$dhcpbridgename" ranges="$DHCPtcpIP01.$DHCPtcpIP02.$DHCPtcpIP03.12-$DHCPtcpIP01.$DHCPtcpIP02.$DHCPtcpIP03.252"} on-error={};
+    :do {/ip dhcp-server network add address="$CIDRDHCPLanIP/24" comment="$softID DHCP LAN service VLAN ID: $DHCPLanVID" gateway="$DHCPLanIP"} on-error={}; 
+    :do {/ip dhcp-server add address-pool="pool_$dhcpbridgename" disabled=no interface="$dhcpbridgename" lease-time=3m name="$dhcpbridgename"} on-error={};  
+    :do {/ip firewall address-list add address=(("$DHCPLanIP") . (".0/24")) list=IntraNET;} on-error={}; 
+    :do {/ip firewall address-list add address="$CIDRDHCPLanIP/24" disabled=no list=IP_DHCPLAN;} on-error={}; 
+    :do {/ip firewall nat add action=masquerade chain=srcnat comment="$softID defconf: masquerade DHCP LAN service VLAN ID: $DHCPLanVID" src-address-list=IP_DHCPLAN;} on-error={}; 
+} }
+#end /interface vlan
+:if ($AddOnceHSBaseCFG != 0) do={:delay 3s; :put "Generating HOTSPOT BASE configuration AddOns \r\n";
+ :do {/ip firewall nat add action=redirect chain=hs-unauth comment="$softID HOSPOT_443_hs-unauth" dst-port=443 in-interface-list=HS protocol=tcp to-ports=64875; /ip dns set allow-remote-requests=yes servers=1.1.1.1,8.8.4.4,9.9.9.11; /ip firewall nat add action=redirect chain=dstnat dst-port=53 protocol=udp to-ports=53 comment="$softID DNS_Enforcer"; /ip firewall nat add action=redirect chain=dstnat dst-port=53 protocol=tcp to-ports=53 comment="$softID DNS_Enforcer"; /ip firewall nat add action=dst-nat chain=dstnat comment="$softID NTP_SNTP_Enforcer" dst-port=123 protocol=udp src-address-list=IP_COINSLOTS to-addresses=127.0.0.1 to-ports=123 disa=yes;} on-error={ };
+ :do {/ip firewall nat add action=masquerade chain=srcnat comment="$softID masquerade ALL COINSLOT IP" dst-address-list="IP_COINSLOTS"; /ip firewall nat add action=masquerade chain=srcnat comment="$softID masquerade ALL hotspot VLAN networks" src-address-list="IP_HS_VLAN_NETWORK"; /ip firewall nat add action=masquerade chain=srcnat comment="$softID masquerade ALL COINSLOT IP" src-address-list="IP_COINSLOTS";} on-error={ }; 
+ :do {/ip firewall filter add action=accept chain=input comment="$softID IP_COINSLOTS" dst-address-list=IP_COINSLOTS place-before=0; /ip firewall filter add action=accept chain=input comment="$softID IP_COINSLOTS" src-address-list=IP_COINSLOTS place-before=0;  /ip firewall filter add action=accept chain=forward comment="$softID IP_COINSLOTS" dst-address-list=IP_COINSLOTS place-before=0; /ip firewall filter add action=accept chain=forward comment="$softID IP_COINSLOTS" src-address-list=IP_COINSLOTS place-before=0; } on-error={ }; 
+ :do {/ip hotspot walled-garden add comment="$softID JuanFiHOST IP" dst-host=10.0.10.1/32; /ip hotspot walled-garden add comment="JuanFiHOST IP" dst-host=10.0.0.1/32; /ip hotspot walled-garden add comment="$softID PublicKnownDNS" dst-host=8.8.8.8; /ip hotspot walled-garden add comment="$softID PublicKnownDNS" dst-host=8.8.4.4; /ip hotspot walled-garden add comment="$softID PublicKnownDNS" dst-host=1.0.0.1; /ip hotspot walled-garden add comment="$softID PublicKnownDNS" dst-host=1.1.1.1; /ip hotspot walled-garden add comment="$softID PublicKnownDNS" dst-host=9.9.9.11;
+      /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=8.8.8.8 !dst-address-list dst-port=53 protocol=udp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=8.8.8.8 !dst-address-list dst-port=53 protocol=tcp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=8.8.4.4 !dst-address-list dst-port=53 protocol=udp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=8.8.4.4 !dst-address-list dst-port=53 protocol=tcp !src-address !src-address-list;
+      /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=1.0.0.1 !dst-address-list dst-port=53 protocol=udp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=1.0.0.1 !dst-address-list dst-port=53 protocol=udp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=9.9.9.11 !dst-address-list dst-port=53 protocol=udp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=1.0.0.1 !dst-address-list dst-port=53 protocol=tcp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=1.1.1.1 !dst-address-list dst-port=53 protocol=tcp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID PublicKnownDNS" disabled=no dst-address=9.9.9.11 !dst-address-list dst-port=53 protocol=tcp !src-address !src-address-list;
+      /ip hotspot walled-garden ip add action=accept comment="$softID IP_COINSLOTS" disabled=no !dst-address dst-address-list=IP_COINSLOTS dst-port=80 protocol=tcp !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID IP_COINSLOTS" disabled=no !dst-address dst-address-list=IP_COINSLOTS !dst-port !protocol !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID JuanFiHOST IP" disabled=no dst-address=10.0.0.1 !dst-address-list !dst-port !protocol !src-address !src-address-list; /ip hotspot walled-garden ip add action=accept comment="$softID JuanFiHOST IP" disabled=no dst-address=10.0.10.1 !dst-address-list !dst-port !protocol !src-address !src-address-list; } on-error={ }
+:if ($AddOnceHSSalesScript != 0) do={ :do { :put "Creating SALES MONITORING Script Variables \r\n"; :delay 5s;
+    :local iface; :local iname; :local ims "Monthly"; :local ids "Daily";
+        :foreach h in=[/ip hotspot find where !(disabled)] do={ :set $iface [/ip hotspot get $h interface]; :set $iname [/ip hotspot get $h name];
+        :put "Individual Vendo Sales Information ---==>>> $iface $iname \r\n";
+        :if ("$teleChatId"="" and "$teleTokenId"="") do={:set $teleChatId "Replace with your TelegramChatID"; :set $teleTokenId "Replace with your TelegramTokenID"; }
+        :do {/tool traffic-monitor add disa=yes on-event="0" comment="$teleChatId" interface=$iface name="$iname_$ims"} on-error={ };
+        :do {/tool traffic-monitor add disa=yes on-event="0" traffic=received trigger=below comment="$teleTokenId" interface=$iface name="$iname_$ids"} on-error={ }; }; 
+    } on-error={ };
+    :do {/system script add dont-require-permissions=no name=todayincome owner=admin policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source="0";} on-error={ };
+    :do {/system script add dont-require-permissions=no name=monthlyincome owner=admin policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source="0";} on-error={ };
+    :do {/system script add dont-require-permissions=no name=lifetimeincome owner=admin policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source="0";} on-error={ };    
+    :do {/system scheduler add comment="$devSerial" interval=1d name=zONEBootResetSales on-event="# REQUIRED    : MTrOSver 6.48 & UP | JuanFi 4.x BIN & Portal\r\
+    \n# DESCRIPTION : Daily Routine Module for JuanFi Hotspot User Profile Login/Logout script Event \r\
+    \n# Created By: fjoCharmedones \r\
+    \n# Date Created : 15 June 2023\r\
+    \n:log info \"Daily Routine Module for JuanFiSystem =->: \$[/system clock get date] \$[/system clock get time]\";\r\
+    \n:do { :do {:local dateint do={:local montharray ( \"jan\",\"feb\",\"mar\",\"apr\",\"may\",\"jun\",\"jul\",\"aug\",\"sep\",\"oct\",\"nov\",\"dec\" ); :local days [ :pick \$d 4 6 ];:local month [ :pick \$d 0 3 ];:local year [ :pick \$d 7 11 ];\r\
+    \n:local monthint ([ :find \$montharray \$month]); :local month (\$monthint + 1); :if ( [:len \$month] = 1) do={:local zero (\"0\");:return [:tonum (\"\$year\$zero\$month\$days\")];} else={:return [:tonum (\"\$year\$month\$days\")];}};\r\
+    \n:local timeint do={:local hours [ :pick \$t 0 2 ];:local minutes [ :pick \$t 3 5 ];:return (\$hours * 60 + \$minutes) ;};\r\
+    \n:local date [ /system clock get date ]; :local time [ /system clock get time ]; :local today [\$dateint d=\$date] ; :local curtime [\$timeint t=\$time] ; :local tyear [ :pick \$date 7 11 ]; :local lyear (\$tyear-1);\r\
+    \n:local tmpM [ :pick \$today 4 6]; :local tmpD [ :pick \$today 6 8]; :set \$coderep \"in-\$tmpM-\$tmpD\"; } on-error={:set \$coderep \"ZZ-\$[/system clock get date] \$[/system clock get time]\";};\r\
+    \n:do {:global devSN [/system sched get [find name=zONEBootime] comment];} on-error={:do {:global devSN [/system sched get [find name=zONEBootResetSales] comment];} on-error={ };};\r\
+    \n:do {:global devFWtype [/system routerboard get firmware-type]; :global devSerial [/system routerboard get serial-number]; :global devModel [/system routerboard get model]; :global HSemailadd \"\$devSerial@sn.mynetname.net\"; } on-error={ }; } on-error={ };\r\
+    \n{:log info \"Reset Daily Sales  started: \$[/system clock get date] \$[/system clock get time]\";\r\
+    \n:do {/system logging disable 0; /system script set source=\"0\" [/system script find name=todayincome]; :foreach xItem in=[/tool traffic-monitor find where disabled and trigger=below and traffic=received] do={:do {/tool traffic-monitor set \$xItem on-event=\"0\";} on-error={ }}; /system logging enable 0;} on-error={/system logging enable 0; :log error \"ERROR on Daily Sales Routine  timelog: \$[/system clock get date] \$[/system clock get time]\";};\r\
+    \n:log info \"Reset Daily Sales  Done: \$[/system clock get date] \$[/system clock get time]\";    \r\
+    \nif ([/system clock get date]~\"/01/\") do={:log info \"Monthly Daily Sales  started: \$[/system clock get date] \$[/system clock get time]\";\r\
+    \n:do {/system logging disable 0; /system script set source=\"0\" [/system script find name=monthlyincome]; :foreach xItem in=[/tool traffic-monitor find where disabled and trigger=above and traffic=transmitted] do={:do {/tool traffic-monitor set \$xItem on-event=\"0\";} on-error={ }}; /system logging enable 0;} on-error={/system logging enable 0; :log error \"ERROR on Monthly Sales Routine  timelog: \$[/system clock get date] \$[/system clock get time]\";};\r\
+    \n:log info \"Monthly Daily Sales  Done: \$[/system clock get date] \$[/system clock get time]\";\r\
+    \n} }\r\
+    \n#EOF" policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-date=dec/31/2020 start-time=00:00:01 } on-error={ };
+}
+#end :if ($AddOnceHSSalesScript != 0)
+:if ($AddOnceHSBaseScript != 0) do={:delay 1s; :put "\r\n\r\n\r\n Adding JuanFi HOTSPOT Default User Login/Logout Profile Script \r\n";
+    :do {/ip hotspot user profile remove [find name=hsPatchProfile];} on-error={ };
+    :do {/ip hotspot user profile add copy-from="$1FiProfile" name=hsPatchProfile;} on-error={ };
+    :do { /ip hotspot user profile set [ find default=yes ] insert-queue-before=first on-login=":put (\",ntfc,10,31d,12,,Disable,\")\r\
+    \n# REQUIRED    : MTrOSver 6.48 upto 7.8rc3 | JuanFi 4.x BIN & Portal\r\
+    \n#             : RouterOS 7.9 changes & updated timezone information from \"tzdata2023c\" release;\r\
+    \n# DESCRIPTION : JuanFi Hotspot User Profile Login/Logout script Event \r\
+    \n#               Sales Monitoring using Mikhmon | Individual Vendo Sales & Telegram Info\r\
+    \n# Created By: fjoCharmedones \r\
+    \n# Date Created : 15 June 2023 Last Modified: 30 Sept2K3\r\
+    \n###--->>BOF\r\
+    \n:if (\$devSN=\$devSerial) do={ /system logging disable 0; / console clear-history;\r\
+    \n### Replace telegram token id | chat id / group id\r\
+    \n:local telegramTokenId \"2021159313:AAHEBoOLogYjLCpSwVeKPVmKKO4TIxa02vQ\";\r\
+    \n:local telegramChatId \"-928606285\";\r\
+    \n##\r\
+    \n# declared VARIABLES = 0 or 1, change to 0=DISABLE 1=ENABLE\r\
+    \n##\r\
+    \n# Send Telegram Message\r\
+    \n:local TelegramSendMsg 1;\r\
+    \n# Telegram Message Per Vendo w/ Separates telegram token id | chat id / group id [w/ special instruction]\r\
+    \n:local PerVendoTelegram 1;\r\
+    \n# Add Sales Monitoring using Mikhmon Server\r\
+    \n:local enableAddSalesReport 1;\r\
+    \n:local createMikhmonSaleReport 0;\r\
+    \n# for ROSv7.x Does you Portal support REST-API \? ROS v6.x AUTO-DISABLE\r\
+    \n:local hsRestAPI 0;\r\
+    \n# folder name for validity TEXTFILE [NOTE: AUTO-DETECT FOLDER LOCATION no NEED to specify]\r\
+    \n:local hsDataName \"/data/\";\r\
+    \n##### Working Variables DONT EDIT BEYOND THIS LINE#\r\
+    \n:local validityTextFolder; :local validityTextFile; :local vcMacAdd; :local CoinsAmt; :local hsSchedevent;\r\
+    \n:local infoArray; :local LoginInfo; :local validUntil; :local validity; :local validtill; :local validValue; :local validLimitUptime;\r\
+    \n:local cpa 0; :local comDetails \"fjo\"; :local extfile \".txt\"; :local hsMacAdd \$\"mac-address\"; :local hsIfaceName \$interface; :local hsUser \$user;\r\
+    \n:local sobre [/ip hotspot user get \$user email]; :local hsLimitUptime [/ip hotspot user get \$user limit-uptime]; \r\
+    \n:local hsUptime [/ip hotspot user get \$user uptime]; :local hsComment [/ip hotspot user get \$user comment];\r\
+    \n:local hsProfile [/ip hotspot user get \$user profile]; :local hsHSprofile [/ip hotspot get [/ip hotspot find interface=\$hsIfaceName] profile];\r\
+    \n:local hsSharedUser [/ip hotspot user profile get [/ip hotspot user profile find name=\$hsProfile] shared-users];\r\
+    \n:local hsHTMLdir [/ip hotspot profile get [ /ip hotspot profile find name=\$hsHSprofile] html-directory];\r\
+    \n:set \$validityTextFolder \"\$hsHTMLdir\$hsDataName\";\r\
+    \n:set \$infoArray [:toarray [:pick \$hsComment ([:find \$hsComment \",\"]+1) [:len \$hsComment]]];\r\
+    \n:set \$CoinsAmt [:pick \$infoArray 0]; :set \$validity [:pick \$hsComment 0 [:find \$hsComment \",\"]]; :set \$validLimitUptime [:len [/ip hotspot user get \$user limit-uptime]];\r\
+    \n:if (\$sobre=\"new@gmail.com\" or \$sobre=\"extend@gmail.com\" or \$sobre=\"bots@juanfi.local\") do={/ip hotspot user set email=\"\$HSemailadd\" comment=\"\" \$user;}\r\
+    \n:if (\$devPackage!=\"routeros\") do={:set \$hsRestAPI 0;}\r\
+    \n:do {/system logging enable 0; :log info \"Checking ON-Login event profile \\n\\r Hotspot: \$interface \\n\\r Username: \$user \"; /system logging disable 0; \r\
+    \n:if (\$hsRestAPI=0) do={/system logging enable 0; :log warning \"WorkingOnValidityTextFile\"; /system logging disable 0;\r\
+    \n:for i from=0 to=([:len \$hsMacAdd] - 1) do={ :local char [:pick \$hsMacAdd \$i]; :if (\$char = \":\") do={ :set \$char \"\"; } ; :set vcMacAdd (\$vcMacAdd . \$char); } ;\r\
+    \n:set \$validityTextFile \"\$validityTextFolder\$vcMacAdd\";\r\
+    \n/file print file=\$validityTextFile where name=\"NoName.TXT\"; \r\
+    \n:delay 3s;\r\
+    \n:do {/file set \"\$validityTextFile\$extfile\" contents=\" \";} on-error={/file set [find name=\$validityTextFile\$extfile] contents=\" \";}; :delay 1.5s;\r\
+    \n:do {/file set [find name=\$validityTextFile\$extfile] contents=\" \";} on-error={:do {/file set \"\$validityTextFile\$extfile\" contents=\" \";} on-error={ };}; :delay 1.5s;\r\
+    \nif (\"\$sobre\"=\"\$HSemailadd\" or \"\$sobre\"=\"bots@juanfi.local\") do={ /system logging enable 0; :log warning \"ProcessUser re-login routine \\n\\r HotspotInterface: \$interface \\n\\r Username: \$user\"; /system logging disable 0; \r\
+    \n:do {:set \$validUntil [/sys scheduler get \$hsUser next-run]; /file set \"\$validityTextFile\$extfile\" contents=\"\$hsUser#\$validUntil\";} on-error={ }; :delay 1.5s;}\r\
+    \n:delay 0.5s; } ;\r\
+    \n:if (\$hsSharedUser>=2) do={/system logging enable 0; :log warning \"Check-Remove-MultipleActiveUserLogins\"; /system logging disable 0; :local cSUmac \$\"mac-address\";\r\
+    \n\t:foreach m in=[/ip hotspot active find user=\"\$username\"] do={ :local aSUmac [/ip hotspot active get \$m mac-address]; :if (\$cSUmac!=\$aSUmac) do={  /ip hotspot active remove [/ip hotspot active find mac-address=\"\$aSUmac\"]; } } };\r\
+    \n:if (\$sobre=\"new@gmail.com\" or \$sobre=\"extend@gmail.com\") do={ :if (\$sobre=\"new@gmail.com\") do={:set \$LoginInfo \"<<======New User======>>\"}; :if (\$sobre=\"extend@gmail.com\") do={:set \$LoginInfo \"<<======User ExtendTime======>>\"};\r\
+    \n/system logging enable 0; :log warning \"Processing \$LoginInfo User Login Info \\nHotspotServer: \$interface Username:<< \$user >>  Amount:--=>  \$CoinsAmt <=--\"; /system logging disable 0;\r\
+    \n:set \$hsSchedevent [:put (\":do {/system sche remove [find name=\$user];} on-error={ }; :do {/ip hotspot user remove [find name=\$user];} on-error={ }; :do {/ip hotspot active remove [find user=\$user];} on-error={ }; :do {/ip hotspot cookie remove [find user=\$user];} on-error={ }; :do {/file remove \\\"\$validityTextFile\$extfile\\\";} on-error={ };\")];\r\
+    \n:set \$validValue [:len \$validity];\r\
+    \n:local DailyIncome; :local MonthlyIncome; :local SalesIncome;\r\
+    \n:if (\$hsRestAPI=0) do={ :set \$validtill \$validity; :do { \t\r\
+    \n:if ( \$validity!=\"0m\" ) do={ /system logging enable 0; :log warning \"CreatingValidityDataTXTFile for \$user \"; /system logging disable 0;\r\
+    \n:local sc [/sys scheduler find name=\$user]; :if (\$sc=\"\") do={ :local a [/ip hotspot user get [find name=\$user] limit-uptime]; :local c (\$validity); :local date [ /system clock get date]; /sys sch add name=\"\$user\" comment=\"\$[/system clock get date]-\$[/system clock get time]\" disable=no start-date=\$date interval=\$c on-event=\$hsSchedevent policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon; :delay 2s; } else={ :local sint [/sys scheduler get \$user interval]; :if ( \$validity!=\"\" ) do={ /sys scheduler set \$user interval (\$sint+\$validity); } }; }\r\
+    \n:delay 1s; :set \$validUntil [/sys scheduler get \$hsUser next-run]; /file set \"\$validityTextFile\$extfile\" contents=\"\$hsUser#\$validUntil\";:delay 1s;\r\
+    \n} on-error={/system logging enable 0; :log error \"ERROR.!!!.CreatingValidityDataTXTFile for \$user\"; /system logging disable 0;} };\r\
+    \n:do {/ system logging enable 0; :log warning \"ProcessingVendoSalesMonitoringSection\"; /system logging disable 0;\r\
+    \n:local sVendo \$interface;\r\
+    \n:local sName [/ip hotspot get [find interface=\$sVendo] name];\r\
+    \n:local sMS \"Monthly\";\r\
+    \n:local sDS \"Daily\";\r\
+    \n:local sAMT \$CoinsAmt;\r\
+    \n:local getDamt [:put ([/tool traffic-monitor get [find where interface=\$sVendo && name=\"\$sName_\$sDS\"] on-event])];\r\
+    \n:local getMamt [:put ([/tool traffic-monitor get [find where interface=\$sVendo && name=\"\$sName_\$sMS\"] on-event])];\r\
+    \n:local IncomeDamt [([:tonum \$getDamt]+[:tonum \$sAMT])]; :local IncomeMamt [([:tonum \$getMamt]+[:tonum \$sAMT])];\r\
+    \n:do {/tool traffic-monitor set on-event=\"\$IncomeDamt\" [find where interface=\$sVendo && name=\"\$sName_\$sDS\"]} on-error={ };\r\
+    \n:do {/tool traffic-monitor set on-event=\"\$IncomeMamt\" [find where interface=\$sVendo && name=\"\$sName_\$sMS\"]} on-error={ };\r\
+    \n:if (\$PerVendoTelegram!=0) do={ :set \$telegramTokenId [:put ([/tool traffic-monitor get [find where interface=\$sVendo && name=\"\$sName_\$sDS\"] comment])];\r\
+    \n:set \$telegramChatId [:put ([/tool traffic-monitor get [find where interface=\$sVendo && name=\"\$sName_\$sMS\"] comment])]; }\r\
+    \n:do {:set \$DailyIncome [:put ([/system script get [find name=todayincome] source])]; :set \$DailyIncome [([:tonum \$DailyIncome]+[:tonum \$sAMT])]; /system script set source=[:tostr \$DailyIncome ] [find name=todayincome];\r\
+    \n:set \$MonthlyIncome [:put ([/system script get [find name=monthlyincome] source])]; :set \$MonthlyIncome [([:tonum \$MonthlyIncome]+[:tonum \$sAMT])]; /system script set source=[:tostr \$MonthlyIncome] [find name=monthlyincome];\r\
+    \n:set \$SalesIncome [:put ([/system script get [find name=lifetimeincome] source])]; :set \$SalesIncome [([:tonum \$SalesIncome]+[:tonum \$sAMT])]; /system script set source=[:tostr \$SalesIncome] [find name=lifetimeincome];\r\
+    \n} on-error={/ system logging enable 0; :log error \"ErrorOnVendoSales---ScriptStorageMissing\"; /system logging disable 0;};\r\
+    \n:if (\$enableAddSalesReport!=\"0\") do={/system logging enable 0; :log warning \"ProcessingOnMikhmonSaleSection\"; /system logging disable 0; :do { \r\
+    \n:local date [ /system clock get date ]; :local year [ :pick \$date 7 11 ];\r\
+    \n:local month [ :pick \$date 0 3 ]; :local ucomment \$hsComment;\r\
+    \n:local uCoins [:pick \$infoArray 0];\r\
+    \n:if (\$validtill=\"0m\" or \$validtill=\"\") do={:set \$validtill \"45d\"} ;\r\
+    \n:local iSked [/sys scheduler find name=\$user]; :if (\$iSked=\"\") do={/sys sch add name=\"\$user\" disable=no start-date=\$date interval=\"45d\"; :delay 2s; }  \r\
+    \n:local iskedCom [ /sys sch get [ /sys sch find where name=\"\$user\" ] comment]; \r\
+    \n:local exp [ /sys sch get [ /sys sch find where name=\"\$user\" ] next-run]; \r\
+    \n:local getxp [:put [:len \$exp]]; \r\
+    \n    :if (\$getxp = 15) do={:local d [:pic \$exp 0 6]; :local t [:pic \$exp 7 16]; :local s (\"/\"); :local exp (\"\$d\$s\$year \$t\"); /ip hotspot user set comment=\$exp [find where name=\"\$user\"]; }; \r\
+    \n    :if (\$getxp = 8) do={ /ip hotspot user set comment=\"\$date \$exp\" [find where name=\"\$user\"];}; \r\
+    \n    :if (\$getxp > 15) do={ /ip hotspot user set comment=\$exp [find where name=\"\$user\"];};\r\
+    \n        :if (\$iSked=\"\") do={/sys sch remove [find where name=\"\$user\"]; :delay 0.5s; } ;\r\
+    \n            :local tmpA \$hsComment; :local tmpB [/ip hotspot user get [find name=\$user] comment] ; \r\
+    \n            :set \$ucomment \"\$coderep-\$hsComment\"; \r\
+    \n            :local mac \$\"mac-address\"; \r\
+    \n            :local time [/system clock get time ];\r\
+    \n            :if (\$createMikhmonSaleReport!=\"0\") do={ :do {/system script add name=\"\$date-|-\$time-|-\$user-|-\$uCoins-|-\$address-|-\$mac-|-\$validtill-|-\$usrProf-|-\$ucomment\" owner=\"\$month\$year\" source=\$date comment=\$user;} on-error={/system logging enable 0; :log error \"ERRORonAddONSalesRoutine\"; /system logging disable 0; }; };\r\
+    \n:set \$cpa 1;} on-error={:set \$cpa 0; /system logging enable 0; :log error \"ERRORonMikhmonSaleSection\"; /system logging disable 0;}; } ;\r\
+    \n:set \$cpa 1;} on-error={:set \$cpa 0; / system logging enable 0; :log error \"ErrorOnVendoSalesMonitoringSection\"; /system logging disable 0;};\r\
+    \n###TelegramArea\r\
+    \n:if (\$cpa!=0) do={/system logging enable 0; :log warning \"PreparingTelegramMessageNotification\"; /system logging disable 0; :do { \r\
+    \n\t:if (\$enableTelegram=1) do={:local myhost; :local checkHostName [:put [:len [/ip dhcp-server lease get [ find mac-address=\$mac ] host-name]]];\t     \r\
+    \n\t    :do {:set \$myhost [/ip dhcp-server lease get [ find mac-address=\$mac ] host-name];} on-error={:set \$myhost \"UNKnownHost\";}\r\
+    \n        :if (\$checkHostName=0) do={:set \$myhost \"UNKnownHost\"};\t\t \r\
+    \n\t\t:local vendoNew;\r\
+    \n\t\t:for i from=0 to=([:len \$vendo] - 1) do={ \r\
+    \n\t\t  :local char [:pick \$vendo \$i]\r\
+    \n\t\t  :if (\$char = \" \") do={\r\
+    \n\t\t\t:set \$char \"%20\"\r\
+    \n\t\t  }\r\
+    \n\t\t  :set vendoNew (\$vendoNew . \$char)\r\
+    \n\t\t}\r\
+    \n        :local MSGdate [/system clock get date]; :local MSGtime [/system clock get time]; \r\
+    \n        :local getIncome; :local getMonthlyIncome; :local getLifetimeIncome;\r\
+    \n        :local sVendo \$interface; :local sName [/ip hotspot get [find interface=\$sVendo] name];\r\
+    \n        :local sMS \"Monthly\"; :local sDS \"Daily\";\r\
+    \n        :set \$getLifetimeIncome [:put ([/system script get [find name=lifetimeincome] source])];\r\
+    \n        :if (\$PerVendoTelegram=0) do={:set \$getIncome [:put ([/system script get [find name=todayincome] source])]; :set \$getMonthlyIncome [:put ([/system script get [find name=monthlyincome] source])]; } else={ :set \$getIncome [:put ([/tool traffic-monitor get [find where interface=\$sVendo && name=\"\$sName_\$sDS\"] on-event])]; :set \$getMonthlyIncome  [:put ([/tool traffic-monitor get [find where interface=\$sVendo && name=\"\$sName_\$sMS\"] on-event])]; }\r\
+    \n            /system logging enable 0; :log warning \"SendingTelegramInfoMessage\"; /system logging disable 0;\r\
+    \n        :local SendInfoMsg (\"\$LoginInfo %0A\".\\\r\
+    \n                            \"COINSLOT: \$vendoNew %0A\".\\\r\
+    \n                            \"USERCODE: \$user %0A\".\\\r\
+    \n                            \"DEVICE: \$myhost %0A\".\\\r\
+    \n                            \"DEV-IP: \$address %0A\".\\\r\
+    \n                            \"DEV-MAC: \$mac %0A\".\\\r\
+    \n                            \"VALIDITY: \$validUntil %0A\".\\\r\
+    \n                            \"UPTIME USED: \$hsUptime %0A\".\\\r\
+    \n                            \"LIMIT UPTIME: \$hsLimitUptime %0A %0A\".\\\r\
+    \n                            \"Amount: \$CoinsAmt %0A\".\\                     \r\
+    \n                            \"Today Sales: \$getIncome %0A\".\\\r\
+    \n                            \"Monthly Sales: \$getMonthlyIncome %0A\".\\\r\
+    \n                            \"Total Income: \$getLifetimeIncome %0A %0A\".\\\r\
+    \n                            \"TransDetails : \$MSGdate | \$MSGtime %0A\".\\\r\
+    \n                            \"<<=-=-=-=-=-=-=-=-=-=-=>>\");\r\
+    \n         :delay 0.5s;                    \r\
+    \n             :do {/tool fetch url=\"https://api.telegram.org/bot\$telegramTokenId/sendmessage\\\?chat_id=\$telegramChatId&text=\$SendInfoMsg\" keep-result=no;} on-error={/system logging enable 0; :log error \"ErrorOnTelegramFetchSection\";} \r\
+    \n    }\r\
+    \n} on-error={/system logging enable 0; :log error \"ErrorMainTelegramSection\"; /system logging disable 0;};\r\
+    \n};\r\
+    \n###TelegramArea\r\
+    \n};\r\
+    \n#:do {/system logging enable 0; :log info \"Lets this crawl to the net \$user Hsprofile: \$hsHSprofile Sharing: \$hsSharedUser htmlDIR: \$hsHTMLdir\"; /system logging disable 0; } on-error={ };\r\
+    \n/system logging enable 0; :log warning \"LOGON-EVENT Finished Username: \$user \"; :log info  \"100%Tested w/ JuanFi 4.x using RouterOS 6.47.10 upto v7.8rc3\"; / console clear-history; } on-error={/ system logging enable 0; :log error \"ScriptFailed\"; / console clear-history;};\r\
+    \n}\r\
+    \n###--EOF" on-logout="### Revised by: fjoCharmedones | ONLogoutEvent | Tested Working as of 13Jan23K\r\
+    \n### onlogout script \r\
+    \n:do {:log info \"==LOGOUT Event Started AccessCode: \$user HS: \$interface  Reason: \$cause\";} on-error={ };\r\
+    \n{ :local MacAdd \$\"mac-address\"; :local UptimeSecs \$\"uptime-secs\"; :local BytesTotal \$\"bytes-total\";\r\
+    \n/do { :local Limituptime ([/ip hotspot user get \$user limit-uptime]); :local Uptime ([/ip hotspot user get \$user uptime]);\r\
+    \n:if (\$Uptime>= \$Limituptime) do={ /system logging enable 0; :log info \"==UPTIME-LIMIT AccessCode: \$user Details: \$cause ==\"; /system logging disable 0;\r\
+    \n/do {/ip hotspot user set \$user email=\"timesup@finish.hotspot.local\" disa=yes;} on-error={/system logging enable 0; :log info \"NORecordFound: \$user\"; /system logging disable 0;}\r\
+    \n/do {/ip hotspot user remove \$user;} on-error={/system logging enable 0; :log info \"NORecordFound: \$user\"; /system logging disable 0;}\r\
+    \n/do {/ip hotspot cookie remove [find user=\$user];} on-error={/system logging enable 0; :log info \"NOCookieRecordFound: \$user\"; /system logging disable 0;}\r\
+    \n/do {/system sche remove \$user;} on-error={/system logging enable 0; :log info \"NOSchedRecordFound: \$user\"; /system logging disable 0;}\r\
+    \n/system logging enable 0; } else={/system logging enable 0; :log warning \"==UserLogout..AccessCode: \$user *Details:= \$cause  *Uptime:= \$UptimeSecs Secs  *DataUsage:= \$BytesTotal Bytes\"; } ;\r\
+    \n} on-error={/system logging enable 0; :log error \"ERRORonLOGOUTeventScript\";}\r\
+    \n/system logging enable 0; :log info \"==LOGOUT==EventFinished==: \$user = \$MacAdd = \$address TimeStamp: \$[/system clock get date] \$[/system clock get time]\"; } \r\
+    \n/system logging enable 0;\r\
+    \n#EOF" parent-queue=none queue-type=QHSqos rate-limit="3072K/2048K 4096K/2560K 2250K/1535K 11/16 8 1500K/1024K" shared-users=2 } on-error={ }; 
+}
+#end :if ($AddOnceHSBaseScript != 0)
+}
+#end :if ($AddOnceHSBaseCFG != 0)
+:if ($AddBootUPshedScript != 0) do={ :do {:local zSysBootEvent [:tostr [(":delay 10s; :log info \"Automated System StartUP\"; :log warning \"== Initializing Device Parameter\
+    s....== - \$[/system clock get date] \$[/system clock get time]\"; /system logging disable 0;\r\
+    \n{\r\
+    \n/interface ethernet \r\
+    \n:foreach iface in=[/interface ethernet find] do={ /interface ethernet reset-mac-address \$iface }\r\
+    \n:local devPackage; /do {:set \$devPackage [/system package get [/system package find name=routeros] name];} on-error={:set \$devPackage \"\";};\
+    \r\
+    \n:local cmdShell; :local ntpCMD; :local devSerial [/system routerboard get serial-number]; :local devModel [/system routerboard get model]; :loca\
+    l devLic [/system license get software-id];\r\
+    \n/interface detect-internet set detect-interface-list=none; /interface detect-internet set lan-interface-list=none; /interface detect-internet se\
+    t wan-interface-list=none; /interface detect-internet set internet-interface-list=none;\r\
+    \n/tool mac-server set allowed-interface-list=all; /tool mac-server mac-winbox set allowed-interface-list=all; /ip neighbor discovery-settings set\
+    \_discover-interface-list=!dynamic; /ip firewall connection tracking set enabled=yes;\r\
+    \n/tool romon set enabled=yes; /ip cloud set ddns-enabled=yes ddns-update-interval=1m; /system identity set name=\"$MTname\$devLic\$devSerial\";\r\
+    \n:local ntpVI \"/system ntp client set enabled=yes  primary-ntp=202.12.97.45 secondary-ntp=216.239.35.12;\";\r\
+    \n:local ntpVII \"/system ntp client set enabled=yes mode=unicast servers=time.windows.com,time.google.com,time.apple.com,asia.pool.ntp.org; /syst\
+    em ntp server set enabled=yes manycast=yes multicast=yes;\";\r\
+    \n:if (\$devPackage=\"routeros\") do={:set \$cmdShell [:put \"\$ntpVII\"]; :set \$ntpCMD [:parse \":do {\$cmdShell} on-error={ }\"]; } else={:set \
+    \$cmdShell [:put \"\$ntpVI\"]; :set \$ntpCMD [:parse \":do {\$cmdShell} on-error={ }\"]; };\r\
+    \n:do {\$ntpCMD} on-error={/ system logging enable 0; :log error \"NTPscriptExecutionError\"}; :delay 5s; /console clear-history;\r\
+    \n}\r\
+    \n/ system logging enable 0; :log error \"== This Configuration is made for \$[/system identity get name] == \"; :log warning \"== BootUP Automati\
+    on Process Completed == - \$[/system clock get date] \$[/system clock get time]\"; / console clear-history;\r\
+    \n#EOF" )]]; /system scheduler add name=zSysBootCMD disabled=yes start-time=startup on-event="$zSysBootEvent" comment="$softID $[/system clock get date] $[/system clock get time]" } on-error={ };
+    :do {/system scheduler add comment="$devSerial" disabled=yes interval=1d name=zONEBootUpdate on-event="# REQUIRED    : MTrOSver 6.48 & UP | JuanFi 4.x BIN & Portal\r\
+    \n# DESCRIPTION : Daily Routine Module for JuanFi Hotspot User Profile Login/Logout script Event \r\
+    \n# Created By: fjoCharmedones \r\
+    \n# Date Created : 15 June 2023\r\
+    \n:do {:local dateint do={:local montharray ( \"jan\",\"feb\",\"mar\",\"apr\",\"may\",\"jun\",\"jul\",\"aug\",\"sep\",\"oct\",\"nov\",\"dec\" ); :local days [ :pick \$d 4 6 ];:local month [ :pick \$d 0 3 ];:local year [ :pick \$d 7 11 ];\r\
+    \n:local monthint ([ :find \$montharray \$month]); :local month (\$monthint + 1); :if ( [:len \$month] = 1) do={:local zero (\"0\");:return [:tonum (\"\$year\$zero\$month\$days\")];} else={:return [:tonum (\"\$year\$month\$days\")];}};\r\
+    \n:local timeint do={:local hours [ :pick \$t 0 2 ];:local minutes [ :pick \$t 3 5 ];:return (\$hours * 60 + \$minutes) ;};\r\
+    \n:local date [ /system clock get date ]; :local time [ /system clock get time ]; :local today [\$dateint d=\$date] ; :local curtime [\$timeint t=\$time] ; :local tyear [ :pick \$date 7 11 ]; :local lyear (\$tyear-1);\r\
+    \n:local tmpM [ :pick \$today 4 6]; :local tmpD [ :pick \$today 6 8]; :set \$coderep \"in-\$tmpM-\$tmpD\"; } on-error={:set \$coderep \"ZZ-\$[/system clock get date] \$[/system clock get time]\";};\r\
+    \n:do {:global devSN [/system sched get [find name=zONEBootime] comment];} on-error={:do {:global devSN [/system sched get [find name=zONEBootUpdate] comment];} on-error={ };};\r\
+    \n:do {:global devFWtype [/system routerboard get firmware-type]; :global devSerial [/system routerboard get serial-number]; :global devModel [/system routerboard get model]; :global HSemailadd \"\$devSerial@sn.mynetname.net\"; } on-error={ }; \r\
+    \n#EOF" policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-date=jan/01/2022 start-time=00:00:01 } on-error={ };
+    :do {/system scheduler add comment="$devSerial" name=zONEBootime on-event="# REQUIRED    : MTrOSver 6.48 & UP | JuanFi 4.x BIN & Portal\r\
+    \n# DESCRIPTION : StartUP for JuanFi Hotspot User Profile Login/Logout script Event \r\
+    \n# Created By: fjoCharmedones \r\
+    \n# Date Created : 15 June 2023\r\
+    \n:delay 10s; :log info \"Automated System StartUP\"; :log warning \"== Initializing Device Parameters....== - \$[/system clock get date] \$[/system clock get time]\"; /system logging disable 0;\r\
+    \n{\r\
+    \n/interface ethernet \r\
+    \n:foreach iface in=[/interface ethernet find] do={ /interface ethernet reset-mac-address \$iface }\r\
+    \n:global devPackage; /do {:set \$devPackage [/system package get [/system package find name=routeros] name];} on-error={:set \$devPackage \"\";};\r\
+    \n:local cmdShell; :local ntpCMD; :local devSerial [/system routerboard get serial-number]; :local devModel [/system routerboard get model]; :local devLic [/system license get software-id];\r\
+    \n/tool romon set enabled=yes; /ip cloud set ddns-enabled=yes ddns-update-interval=1m;\r\
+    \n:local ntpVI \"/system ntp client set enabled=yes  primary-ntp=202.12.97.45 secondary-ntp=216.239.35.12;\";\r\
+    \n:local ntpVII \"/system ntp client set enabled=yes mode=unicast servers=time.windows.com,time.google.com,time.apple.com,asia.pool.ntp.org; /system ntp server set enabled=yes manycast=yes multicast=yes;\";\r\
+    \n:if (\$devPackage=\"routeros\") do={:set \$cmdShell [:put \"\$ntpVII\"]; :set \$ntpCMD [:parse \":do {\$cmdShell} on-error={ }\"]; } else={:set \$cmdShell [:put \"\$ntpVI\"]; :set \$ntpCMD [:parse \":do {\$cmdShell} on-error={ }\"]; };\r\
+    \n:do {\$ntpCMD} on-error={/ system logging enable 0; :log error \"NTPscriptExecutionError\"}; :delay 1.5s; \r\
+    \n{ :global devFWtype [/system routerboard get firmware-type]; :global devSerial [/system routerboard get serial-number]; :global devModel [/system routerboard get model]; :global coderep; :global HSemailadd \"\$devSerial@sn.mynetname.net\";    \r\
+    \n:log error \"== This Configuration is custom made for JuanFi System w/ Sales Monitoring Report == \";\r\
+    \n:do { :do {:local dateint do={:local montharray ( \"jan\",\"feb\",\"mar\",\"apr\",\"may\",\"jun\",\"jul\",\"aug\",\"sep\",\"oct\",\"nov\",\"dec\" ); :local days [ :pick \$d 4 6 ];:local month [ :pick \$d 0 3 ];:local year [ :pick \$d 7 11 ];\r\
+    \n:local monthint ([ :find \$montharray \$month]); :local month (\$monthint + 1); :if ( [:len \$month] = 1) do={:local zero (\"0\");:return [:tonum (\"\$year\$zero\$month\$days\")];} else={:return [:tonum (\"\$year\$month\$days\")];}};\r\
+    \n:local timeint do={:local hours [ :pick \$t 0 2 ];:local minutes [ :pick \$t 3 5 ];:return (\$hours * 60 + \$minutes) ;};\r\
+    \n:local date [ /system clock get date ]; :local time [ /system clock get time ]; :local today [\$dateint d=\$date] ; :local curtime [\$timeint t=\$time] ; :local tyear [ :pick \$date 7 11 ]; :local lyear (\$tyear-1);\r\
+    \n:local tmpM [ :pick \$today 4 6]; :local tmpD [ :pick \$today 6 8]; :set \$coderep \"in-\$tmpM-\$tmpD\"; } on-error={:set \$coderep \"ZZ-\$[/system clock get date] \$[/system clock get time]\";};\r\
+    \n:do {:global devSN [/system sched get [find name=zONEBootime] comment];} on-error={:do {:global devSN [/system sched get [find name=zONEBootUpdate] comment];} on-error={ };};\r\
+    \n} on-error={/system logging enable 0; :log error \"==BootAutomationError== - \$[/system clock get date] \$[/system clock get time]\";}; } \r\
+    \n/console clear-history;\r\
+    \n}\r\
+    \n/ system logging enable 0; :log error \"== This Configuration is made for \$[/system identity get name] == \"; :log warning \"== BootUP Automation Process Completed == - \$[/system clock get date] \$[/system clock get time]  - Created by: fjoCharmedOnes\"; / console clear-history;\r\
+    \n#EOF" policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-time=startup } on-error={ };
+} 
+#end :if ($AddBootUPshedScriptt != 0)
+:do {/interface bridge set [find name=$BridgeName] protocol-mode=none frame-types=admit-only-vlan-tagged vlan-filtering=yes; :delay 0.5s;} on-error={ };
+:do {/interface bridge set [find name=$BridgeName] disa=yes; :delay 1s; /interface bridge set [find name=$BridgeName] disa=no;} on-error={ };
+:if ("StartingScriptConfiguration...." = "$[/system identity get name]") do={/system identity set name="$sysBoardName-$softID-$devSerial";}
+:delay 5s; :local devComment [:put "\r\n System Information: \r\n Date: $[/system clock get date] \r\n Time: $[/system clock get time] \r\n Board: $[/system resource get board-name] \r\n Architecture: $[/system resource get architecture-name] \r\n Firmware: $[/system resource get version] \r\n \r\n FINISHED....! \r\n";]
+:do {/ip dhcp-server alert set [/ip dhcp-server alert find interface="$softID$dummy"] disabled=yes on-alert="This Configuration is for \r\n OwnerInfo: $ownername \r\n Date: $[/system clock get date] \r\n Time: $[/system clock get time] \r\n $devComment \r\n by:fjo" comment="$devComment";} on-error={ };
+:do {/user group set [find name=full] comment="$devComment";} on-error={}; :do {/user group set [find name=read] comment="DefGrp by:fjo $softID"; } on-error={}; :do {/user group set [find name=write] comment="$devSerial DefGrp by:fjo"; } on-error={};
+/system logging enable 0; / console clear-history;
+#EOF Main 
+} on-error={/ file remove [find name~"allBridgeVLANCFG.rsc"]; / file remove [find name=allBridgeVLANCFG.rsc]; / file remove [find name=flash/allBridgeVLANCFG.rsc]; / file remove [find name=skins/allBridgeVLANCFG.rsc]; / file remove [find name=pub/allBridgeVLANCFG.rsc]; / file remove [find name=flash/skins/allBridgeVLANCFG.rsc]; / file remove [find name=flash/pub/allBridgeVLANCFG.rsc]; /system logging enable 0; / console clear-history;};
+:do {/system script environment; :foreach iTem in=[/system script environment find] do={ /system script environment remove $iTem } } on-error={ };
+#EOL
