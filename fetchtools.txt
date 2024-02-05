@@ -32,7 +32,7 @@
 ####>>> totalPorts = number of MT ports w/ VLAN ID for RJ45
 :local totalPorts 4;
 ####>>>MT port e.g 2 VLAN tagged will start at ether2
-:local eportnumstart 3;
+:local eportnumstart 2;
 # <<SFP>> # # <<SFP>> # # <<SFP>> # # <<SFP>> #
 ####>>> totalPorts = number of MT ports w/ VLAN ID  for SFP
 :local totalPortsSFP 0;
